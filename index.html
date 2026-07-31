@@ -80,6 +80,13 @@
     background: var(--card); border: 1px solid var(--line); font-size: 15px; font-weight: 600; text-align: center;
   }
   .btn-link { color: var(--accent); font-size: 14px; font-weight: 600; padding: 6px; }
+  .btn-link.danger { color: var(--bad); }
+  .equipo-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 2px; border-bottom: 1px solid var(--line);
+  }
+  .equipo-row:last-child { border-bottom: none; }
+  .equipo-acciones { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none; }
 
   /* ---- logo / cabecera de bienvenida ---- */
   .brand { text-align: center; padding: 28px 0 22px; }
@@ -453,8 +460,11 @@
     <div id="trial-banner"></div>
 
     <div class="card hidden" id="invite-card">
-      <h2>Invita a tu equipo</h2>
-      <p class="sub" style="margin-bottom:12px">Comparte este código con tus repartidores o encargados de sitio. Ellos entran a la app, eligen «Crear cuenta» → «Tengo un código», y se inventan un <strong>usuario y una contraseña</strong>. No necesitan correo electrónico.</p>
+      <div class="listhead">
+        <h2>Invita a tu equipo</h2>
+        <button class="btn-link" id="btn-ir-equipo">👥 Ver equipo</button>
+      </div>
+      <p class="sub" style="margin:6px 0 12px">Comparte este código con tus repartidores o encargados de sitio. Ellos entran a la app, eligen «Crear cuenta» → «Tengo un código», y se inventan un <strong>usuario y una contraseña</strong>. No necesitan correo electrónico.</p>
       <div class="invite-row">
         <span class="code" id="invite-code">--------</span>
         <button class="btn-link" id="btn-copy-invite">Copiar</button>
@@ -477,6 +487,19 @@
   </section>
 
   <!-- ================= AJUSTES DE PRODUCTOS ================= -->
+  <!-- ================= EQUIPO (solo el dueño) ================= -->
+  <section id="view-equipo" class="hidden">
+    <div class="topbar">
+      <button class="iconbtn" id="btn-equipo-back" aria-label="Volver">←</button>
+      <div style="flex:1"><h1>Tu equipo</h1><p class="sub">Quién puede entrar a la app de tu negocio</p></div>
+    </div>
+    <div id="equipo-msg"></div>
+    <div class="card">
+      <div id="equipo-list"><p class="sub">Cargando…</p></div>
+    </div>
+    <p class="sub">Si alguien de tu equipo olvidó su contraseña, aquí le pones una nueva y se la dices. No hace falta correo ni entrar a ningún panel.</p>
+  </section>
+
   <section id="view-productos" class="hidden">
     <div class="topbar">
       <button class="iconbtn" id="btn-prod-back" aria-label="Volver">←</button>
@@ -729,6 +752,24 @@
   </div>
 </div>
 
+<!-- ================= MODAL: nueva contraseña de un operador ================= -->
+<div class="modal-back" id="modal-clave">
+  <div class="modal">
+    <h2 id="clave-title">Nueva contraseña</h2>
+    <p class="sub" style="margin-bottom:14px" id="clave-sub"></p>
+    <div class="field">
+      <label for="clave-input">Contraseña nueva</label>
+      <input id="clave-input" type="text" autocomplete="off" placeholder="Mínimo 6 caracteres">
+      <p class="sub" style="margin-top:6px">Se ve escrita a propósito, para que puedas dictársela. Cámbiala por una que la persona recuerde.</p>
+    </div>
+    <div id="clave-msg"></div>
+    <div class="actions">
+      <button class="btn-secondary" id="clave-cancel">Cancelar</button>
+      <button class="btn-primary" id="clave-save">Cambiar contraseña</button>
+    </div>
+  </div>
+</div>
+
 <!-- ================= MODAL: reportar discrepancia ================= -->
 <div class="modal-back" id="modal-discrepancia">
   <div class="modal">
@@ -784,7 +825,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const $ = id => document.getElementById(id);
-const VIEWS = ['view-loading', 'view-auth', 'view-home', 'view-productos', 'view-recepciones', 'view-recepcion', 'view-reportes', 'view-alertas'];
+const VIEWS = ['view-loading', 'view-auth', 'view-home', 'view-equipo', 'view-productos', 'view-recepciones', 'view-recepcion', 'view-reportes', 'view-alertas'];
 function show(view) {
   for (const id of VIEWS) $(id).classList.toggle('hidden', id !== 'view-' + view);
   window.scrollTo(0, 0);
@@ -1272,6 +1313,16 @@ async function cargarNegocio(user) {
     .single();
 
   if (error || !data) {
+    // el servidor respondió y dice que esta persona ya no pertenece a ningún
+    // negocio (la sacaron del equipo): no se puede seguir como si nada, o se
+    // quedaría trabajando contra una copia local que ya nadie va a recibir
+    if (hayRed() && error && error.code === 'PGRST116') {
+      limpiarDatosLocales();
+      await sb.auth.signOut().catch(() => {});
+      mostrarLogin();
+      renderMsg('Ya no formas parte de ese negocio. Si es un error, pídele al dueño el código de invitación para volver a unirte.', 'error');
+      return;
+    }
     // sin señal no es un error: se sigue con lo último que se sabía
     if (cargarNegocioDeCache()) { renderEstadoRed(); sincronizar(); return; }
     console.error(error);
@@ -1310,10 +1361,127 @@ $('btn-copy-invite').addEventListener('click', async () => {
   }
 });
 
+/* ============ equipo del negocio (solo el dueño) ============
+   Antes, si a un operador se le olvidaba la contraseña, había que entrar al
+   panel de Supabase a cambiársela. El cambio de clave lo hace una función
+   del propio servidor (resetear_clave_operador), que comprueba ella misma
+   que quien llama sea el dueño del mismo negocio: la llave de administrador
+   nunca pasa por la app. Ver supabase/migrations/0006_equipo.sql */
+$('btn-ir-equipo').addEventListener('click', () => { show('equipo'); cargarEquipo(); });
+$('btn-equipo-back').addEventListener('click', () => show('home'));
+
+function msgEquipo(texto, clase) {
+  $('equipo-msg').innerHTML = texto ? `<div class="msg ${clase || 'error'}">${escapeHtml(texto)}</div>` : '';
+}
+
+async function cargarEquipo() {
+  msgEquipo('');
+  const cont = $('equipo-list');
+  if (!hayRed()) {
+    cont.innerHTML = '<p class="sub">Necesitas internet para ver y cambiar el equipo.</p>';
+    return;
+  }
+  cont.innerHTML = '<p class="sub">Cargando…</p>';
+  const { data, error } = await sb.from('memberships')
+    .select('user_id, role, usuario, created_at')
+    .eq('tenant_id', state.tenantId)
+    .order('role').order('usuario');
+  if (error) {
+    console.error(error);
+    // la columna "usuario" llega con la migración 0006
+    cont.innerHTML = '<p class="sub">No se pudo cargar tu equipo.</p>';
+    msgEquipo(/usuario/.test(error.message || '')
+      ? 'Falta actualizar la base de datos: corre supabase/migrations/0006_equipo.sql en Supabase → SQL Editor.'
+      : 'No se pudo cargar tu equipo. Revisa tu conexión.');
+    return;
+  }
+  renderEquipo(data || []);
+}
+
+function renderEquipo(miembros) {
+  const cont = $('equipo-list');
+  const yo = lsGet(SESION_KEY, {}).userId;
+  const operadores = miembros.filter(m => m.role === 'operador');
+  cont.innerHTML = miembros.map(m => {
+    const esYo = m.user_id === yo;
+    const nombre = escapeHtml(m.usuario || '(sin nombre)');
+    return `<div class="equipo-row">
+      <div style="flex:1; min-width:0">
+        <div style="font-weight:700">${nombre}${esYo ? ' <span class="sub">(tú)</span>' : ''}</div>
+        <span class="role-badge">${m.role === 'dueno' ? 'Dueño' : 'Operador'}</span>
+      </div>
+      ${m.role === 'operador' ? `<div class="equipo-acciones">
+        <button class="btn-link" data-clave="${m.user_id}" data-nombre="${nombre}">🔑 Contraseña</button>
+        <button class="btn-link danger" data-quitar="${m.user_id}" data-nombre="${nombre}">Quitar</button>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+  if (!operadores.length) {
+    cont.innerHTML += '<p class="sub" style="margin-top:10px">Todavía no se ha unido nadie. Comparte el código de invitación del inicio.</p>';
+  }
+  for (const b of cont.querySelectorAll('[data-clave]'))
+    b.onclick = () => pedirClaveNueva(b.dataset.clave, b.dataset.nombre);
+  for (const b of cont.querySelectorAll('[data-quitar]'))
+    b.onclick = () => quitarDelEquipo(b.dataset.quitar, b.dataset.nombre);
+}
+
+let claveUserId = null;
+function pedirClaveNueva(userId, nombre) {
+  claveUserId = userId;
+  $('clave-title').textContent = 'Nueva contraseña de ' + nombre;
+  $('clave-sub').textContent = 'La contraseña anterior deja de servir, y si tenía la sesión abierta en algún teléfono se le cierra.';
+  $('clave-input').value = '';
+  $('clave-msg').innerHTML = '';
+  $('modal-clave').classList.add('show');
+  setTimeout(() => $('clave-input').focus(), 60);
+}
+$('clave-cancel').addEventListener('click', () => { $('modal-clave').classList.remove('show'); claveUserId = null; });
+
+$('clave-save').addEventListener('click', async () => {
+  const nueva = $('clave-input').value.trim();
+  if (nueva.length < 6) {
+    $('clave-msg').innerHTML = '<div class="msg error">La contraseña debe tener al menos 6 caracteres.</div>';
+    return;
+  }
+  const btn = $('clave-save');
+  btn.disabled = true; btn.textContent = 'Cambiando…';
+  const { error } = await sb.rpc('resetear_clave_operador', { p_user_id: claveUserId, p_nueva: nueva });
+  btn.disabled = false; btn.textContent = 'Cambiar contraseña';
+  if (error) {
+    console.error(error);
+    const m = error.message || '';
+    // la función llega con la migración 0006
+    $('clave-msg').innerHTML = '<div class="msg error">' + escapeHtml(
+      /function|does not exist|schema cache/i.test(m)
+        ? 'Falta actualizar la base de datos: corre supabase/migrations/0006_equipo.sql en Supabase → SQL Editor.'
+        : (/al menos 6|Solo el dueño|no es un operador/.test(m) ? m : 'No se pudo cambiar la contraseña. Intenta de nuevo.')
+    ) + '</div>';
+    return;
+  }
+  $('modal-clave').classList.remove('show');
+  claveUserId = null;
+  msgEquipo('Contraseña cambiada. Dile la nueva a la persona: ya puede entrar con ella.', 'ok');
+  toast('Contraseña cambiada');
+});
+
+function quitarDelEquipo(userId, nombre) {
+  askConfirm('Quitar del equipo',
+    `${nombre} dejará de entrar a la app de tu negocio. Lo que ya registró se queda en el historial. Si vuelve, puede unirse otra vez con el código de invitación.`,
+    async () => {
+      const { error } = await sb.from('memberships').delete()
+        .eq('user_id', userId).eq('tenant_id', state.tenantId);
+      if (error) { console.error(error); msgEquipo('No se pudo quitar a esa persona.'); return; }
+      toast('Quitado del equipo');
+      await cargarEquipo();   // refresca la lista y limpia el mensaje anterior…
+      msgEquipo(nombre + ' ya no forma parte de tu equipo.', 'ok');   // …y luego confirma
+    });
+}
+
 let cerrandoSesion = false;
 
 function limpiarDatosLocales() {
-  const t = state.tenantId;
+  // al arrancar, state todavía está vacío: el negocio se sabe por la sesión guardada
+  const t = state.tenantId || (lsGet(SESION_KEY, {}) || {}).tenantId;
   lsDel(SESION_KEY);
   if (t) for (const n of ['productos', 'clientes', 'discrepancias', 'movs']) lsDel(`mercancia_c_${t}_${n}`);
   state.productos = []; state.clientes = []; state.discrepancias = []; state.movs = [];
@@ -1395,7 +1563,9 @@ async function cargarProductos() {
     state.productos = leerCache('productos', state.productos);   // seguimos con lo último conocido
     if (hayRed()) { console.error(error); toast('No se pudieron cargar los productos'); }
   } else {
-    state.productos = data || [];
+    // los productos creados sin señal que aún no se han subido no deben desaparecer
+    const pendientes = state.productos.filter(p => esIdLocal(p.id) && !idMap[p.id]);
+    state.productos = [...(data || []), ...pendientes].sort((a, b) => (a.orden || 0) - (b.orden || 0));
     guardarCache('productos', state.productos);
   }
   renderProductosPreview();
@@ -1480,31 +1650,33 @@ function escapeHtml(s) {
    se deja solo con conexión (a diferencia de recepciones, despachos y
    pesadas, que sí funcionan sin señal). Así se evita el lío de resolver
    conflictos de configuración entre teléfonos. */
-function exigeRed() {
-  if (hayRed()) return true;
-  toast('Necesitas conexión para cambiar los productos');
-  return false;
-}
-
 async function toggleActivo(p) {
-  if (!exigeRed()) return;
-  const { error } = await sb.from('products').update({ activo: !p.activo }).eq('id', p.id);
-  if (error) { toast('No se pudo actualizar'); return; }
+  const r = await escribir('products', 'update', { id: p.id, payload: { activo: !p.activo } });
+  if (!r.ok) { toast('No se pudo actualizar'); return; }
+  p.activo = !p.activo;
+  guardarCache('productos', state.productos);
   await cargarProductos();
 }
 
 async function moverProducto(idx, dir) {
-  if (!exigeRed()) return;
   const otro = state.productos[idx + dir];
   const yo = state.productos[idx];
   if (!otro) return;
-  await sb.from('products').update({ orden: otro.orden }).eq('id', yo.id);
-  await sb.from('products').update({ orden: yo.orden }).eq('id', otro.id);
+  const ordenYo = yo.orden, ordenOtro = otro.orden;
+  const a = await escribir('products', 'update', { id: yo.id, payload: { orden: ordenOtro } });
+  const b = await escribir('products', 'update', { id: otro.id, payload: { orden: ordenYo } });
+  if (!a.ok || !b.ok) { toast('No se pudo reordenar'); await cargarProductos(); return; }
+  yo.orden = ordenOtro; otro.orden = ordenYo;
+  state.productos.sort((x, y) => (x.orden || 0) - (y.orden || 0));
+  guardarCache('productos', state.productos);
   await cargarProductos();
 }
 
+// Borrar es lo único que sigue necesitando señal: si el producto ya tiene
+// historial, el servidor es el único que lo sabe. Encolarlo sin conexión
+// dejaría al dueño creyendo que lo borró para verlo reaparecer al sincronizar.
 async function eliminarProducto(p) {
-  if (!exigeRed()) return;
+  if (!hayRed()) { toast('Necesitas conexión para eliminar un producto'); return; }
   askConfirm('Eliminar producto', `Se borrará «${p.nombre}» de tu catálogo. Si ya tiene recepciones registradas, no se podrá borrar — mejor desactívalo.`, async () => {
     const { error } = await sb.from('products').delete().eq('id', p.id);
     if (error) {
@@ -1515,6 +1687,8 @@ async function eliminarProducto(p) {
       }
       return;
     }
+    state.productos = state.productos.filter(x => x.id !== p.id);
+    guardarCache('productos', state.productos);
     toast('Producto eliminado');
     await cargarProductos();
   });
@@ -1590,7 +1764,6 @@ function parseNum(s) {
 }
 
 $('pf-save').addEventListener('click', async () => {
-  if (!hayRed()) { $('pf-msg').innerHTML = '<div class="msg error">Necesitas conexión para guardar productos.</div>'; return; }
   const nombre = $('pf-nombre').value.trim();
   if (!nombre) { $('pf-msg').innerHTML = '<div class="msg error">Escribe un nombre.</div>'; return; }
 
@@ -1632,13 +1805,21 @@ $('pf-save').addEventListener('click', async () => {
   btn.innerHTML = '<span class="spinner"></span>Guardando…';
   try {
     if (editingId) {
-      const { error } = await sb.from('products').update(payload).eq('id', editingId);
-      if (error) throw error;
+      const r = await escribir('products', 'update', { id: editingId, payload });
+      if (!r.ok) throw r.error;
+      const p = state.productos.find(x => x.id === editingId);
+      if (p) Object.assign(p, payload);
     } else {
       payload.orden = state.productos.length;
-      const { error } = await sb.from('products').insert(payload);
-      if (error) throw error;
+      // explícito, no por el valor por defecto de la tabla: sin señal la copia
+      // local es la única que hay, y sin esto el producto se vería «inactivo»
+      // hasta que subiera
+      payload.activo = true;
+      const r = await escribir('products', 'insert', { payload });
+      if (!r.ok) throw r.error;
+      state.productos.push({ ...payload, id: r.id });
     }
+    guardarCache('productos', state.productos);
     $('modal-producto').classList.remove('show');
     toast(editingId ? 'Producto actualizado' : 'Producto creado');
     await cargarProductos();

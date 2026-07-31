@@ -30,6 +30,21 @@ Si alguna vez necesitas modificar el esquema, no vuelvas a correr todo el archiv
 cero sobre una base con datos: escribe un script nuevo solo con el cambio (una migración),
 para no perder información.
 
+### Si tu proyecto es anterior a alguna función
+
+`schema.sql` está siempre al día: en un proyecto **nuevo** basta con ese archivo. Pero un
+proyecto creado hace tiempo no tiene lo que se agregó después, y la app avisa cuando le
+falta algo. En la carpeta [`migrations/`](./migrations) están los cambios sueltos; estos
+dos son los que hacen falta hoy y **se pegan igual: SQL Editor → New query → Run**:
+
+| Archivo | Para qué | Señal de que falta |
+|---|---|---|
+| [`0005_ponerse_al_dia.sql`](./migrations/0005_ponerse_al_dia.sql) | Precio por kg y tasa BCV en los despachos | «No se pudo guardar el precio» |
+| [`0006_equipo.sql`](./migrations/0006_equipo.sql) | Ver el equipo y cambiarle la contraseña a un operador | La pantalla de equipo lo pide por su nombre |
+
+Los dos son **seguros de correr aunque ya estén aplicados** (no borran ni duplican nada)
+y terminan avisando *"Todo al día"*. Si tienes dudas de cuál te falta, corre los dos.
+
 ## 3. Configurar el login (Authentication)
 
 1. **Authentication → Providers**: el proveedor **Email** ya viene activado, no lo toques.
@@ -91,10 +106,9 @@ de inicio de sesión de la app.
   la forma en que Supabase identifica la cuenta. El usuario real es lo que va antes
   de la arroba.
 
-  **Si un operador olvida su contraseña**, como no hay correo no puede recuperarla
-  solo. Lo práctico: en Supabase → **Authentication → Users**, busca su cuenta y
-  usa *Reset password* para ponerle una nueva, o bórrala para que se registre otra
-  vez con el mismo código de invitación.
+  **Si un operador olvida su contraseña**, el dueño se la cambia **desde la app**:
+  inicio → **👥 Ver equipo** → **🔑 Contraseña**. No hace falta entrar aquí.
+  (Requiere haber corrido la migración `0006_equipo.sql`.)
 - **Activar el pago pasado el trial:** esto lo haces tú manualmente, sin pantallas
   especiales — en Supabase → **Table Editor → tenants** → busca el negocio → columna
   `is_paid` → marca `true`. Ningún usuario de la app puede tocar esa columna aunque

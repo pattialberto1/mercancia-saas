@@ -53,7 +53,12 @@ de prueba gratis.
 - ✅ **Funciona sin conexión** — la app abre y deja trabajar aunque el
   teléfono no tenga señal: no pide volver a iniciar sesión, se ven los
   productos, clientes e historial guardados, y todo lo que se registre se
-  sube solo en cuanto vuelve internet. Ver sección abajo.
+  sube solo en cuanto vuelve internet. **También el catálogo de productos**
+  (crear, editar, activar/desactivar y reordenar). Ver sección abajo.
+- ✅ **Tu equipo** — el dueño ve quién puede entrar a la app de su negocio,
+  le cambia la contraseña a quien la olvidó y saca a quien ya no trabaja
+  ahí, todo desde la app y sin entrar al panel de Supabase. Ver sección
+  abajo.
 
 ### El equipo entra sin correo electrónico
 
@@ -79,10 +84,9 @@ Los usuarios son únicos entre todos los negocios, así que si alguien elige
 uno ya tomado la app lo dice claro y sugiere agregarle el apellido. Las
 cuentas viejas creadas con correo siguen funcionando igual.
 
-Lo que **no** se puede es recuperar la contraseña de un operador desde la
-app (no hay a dónde mandarla): eso lo resuelve el dueño desde el panel de
-Supabase, cambiándole la clave o borrando la cuenta para que se registre de
-nuevo con el mismo código. Está explicado en `supabase/SETUP.md`.
+Si a alguien del equipo se le olvida la contraseña, **el dueño se la cambia
+desde la app** (👥 Ver equipo → 🔑 Contraseña): pone una nueva, se la dice, y
+listo. Ver la sección siguiente.
 
 Probado con Playwright (25 verificaciones): que el formulario cambie según
 quién se registre, que se rechace un correo donde va un usuario (y al
@@ -90,6 +94,40 @@ revés), usuarios muy cortos o con espacios, que por debajo se arme el
 correo interno correcto, que se pueda iniciar sesión escribiendo solo el
 usuario, que el dominio interno no se muestre nunca en pantalla, y los
 mensajes de usuario repetido y contraseña incorrecta.
+
+### Tu equipo (solo el dueño)
+
+Desde el inicio, **👥 Ver equipo** abre la lista de quién puede entrar a la
+app del negocio, con su usuario y su rol. Sobre cada operador hay dos cosas:
+
+- **🔑 Contraseña** — para cuando alguien la olvida. El dueño escribe una
+  nueva (se ve mientras la escribe, a propósito, para poder dictársela), la
+  anterior deja de servir y, si esa persona tenía la sesión abierta en algún
+  teléfono, se le cierra.
+- **Quitar** — saca a esa persona del negocio. Lo que ya registró se queda
+  en el historial; si vuelve, puede unirse otra vez con el código de
+  invitación. A quien saquen, la app se lo dice la próxima vez que abra
+  (y le borra del teléfono los datos del negocio) en lugar de dejarlo
+  trabajando contra una copia que ya nadie va a recibir.
+
+Al dueño no se le puede cambiar la contraseña ni quitar desde aquí: un
+negocio sin dueño quedaría sin nadie que lo administre.
+
+**Cómo funciona por dentro, que es la parte delicada.** Cambiarle la
+contraseña a otra persona normalmente exige la llave de administrador del
+proyecto, y esa llave **no puede estar dentro de la app**: cualquiera la
+sacaría del navegador y tomaría control de todos los negocios. Por eso el
+cambio lo hace una función que vive en el servidor
+([`resetear_clave_operador`](./supabase/migrations/0006_equipo.sql)), que
+corre con permisos elevados pero comprueba ella misma, en cada llamada, que
+quien la invoca sea el dueño del **mismo** negocio y que el destinatario sea
+un **operador** de ese negocio. La app solo lleva la llave pública.
+
+Probado contra Postgres real: el dueño cambia la clave y la nueva sirve
+mientras la vieja deja de servir; un operador intentándolo con otro
+operador, el dueño de otro negocio, un dueño contra otro dueño y una
+llamada sin sesión iniciada son **los cuatro rechazados**, y la clave
+queda intacta. Más 34 verificaciones de la pantalla con Playwright.
 
 ### Clientes y despachos
 
@@ -243,10 +281,16 @@ las filas que todavía no se subieron salen marcadas «sin subir».
 
 Sin señal funcionan: entrar, ver el negocio y los productos, crear
 recepciones y despachos, pesar, borrar pesadas, terminar/reabrir, anotar
-clientes nuevos, poner precio, reportar discrepancias y ver los reportes
-(que se calculan con el historial guardado). Lo único que **sí** necesita
-conexión es cambiar el catálogo de productos —es configuración del dueño,
-no trabajo del día— y ahí la app lo dice claro en vez de fallar raro.
+clientes nuevos, poner precio, reportar discrepancias, ver los reportes
+(que se calculan con el historial guardado) y **cambiar el catálogo de
+productos** (crear, editar, activar/desactivar, reordenar).
+
+Lo único que **sí** necesita conexión es **borrar** un producto: si ya
+tiene recepciones registradas no se puede borrar, y el único que lo sabe
+es el servidor. Encolarlo dejaría al dueño creyendo que lo borró para
+verlo reaparecer al sincronizar, así que la app prefiere decirlo de una
+vez. (Y registrarse por primera vez, claro, que también lo hace el
+servidor.)
 
 Lo delicado de esto es que algo creado sin señal (por ejemplo un cliente
 nuevo) todavía no tiene su identificador real del servidor. La app le
@@ -350,20 +394,23 @@ Están cubiertas las 7 fases planeadas originalmente, más el precio en
 USD/Bs de los despachos y el modo sin conexión. Con eso el producto está
 completo para usarse a diario.
 
-Lo que queda son mejoras, no huecos:
+### Pendiente, decidido para más adelante
 
-- **Registrarse (cuenta nueva) sí necesita internet** — solo la primera
-  vez; después la app abre sin señal. No hay forma de evitarlo: crear la
-  cuenta la hace el servidor.
-- **Recuperar la contraseña de un operador** hay que hacerlo desde el panel
-  de Supabase (no tienen correo a dónde mandarla). Si llega a pasar seguido,
-  se le puede dar al dueño una pantalla para resetearla desde la app.
-- **El catálogo de productos requiere conexión** para cambiarlo. Se dejó
-  así a propósito (evita conflictos de configuración entre teléfonos); si
-  algún día estorba, se puede sumar a la cola igual que lo demás.
-- **Cobros dentro de la app** (pagar la suscripción desde el teléfono) —
-  hoy la activación pasado el trial la haces tú a mano en Supabase, como
-  se planeó desde el principio.
+- **Cobros dentro de la app** (que el negocio pague su suscripción desde el
+  teléfono). Hoy, cuando a un negocio se le vence la prueba de 14 días, la
+  activación se hace a mano en Supabase: `update tenants set is_paid = true
+  where id = '…'`. Sirve mientras sean pocos negocios; con varios clientes
+  se vuelve trabajo manual todas las semanas.
+
+### Límites que se quedan así a propósito
+
+- **Registrarse (cuenta nueva) necesita internet** — solo la primera vez;
+  después la app abre y trabaja sin señal. No hay forma de evitarlo: crear
+  la cuenta la hace el servidor.
+- **Borrar un producto necesita conexión.** Crear, editar, activar/desactivar
+  y reordenar funcionan sin señal; borrar no, porque si el producto ya tiene
+  recepciones el único que lo sabe es el servidor, y encolarlo dejaría al
+  dueño creyendo que lo borró para verlo reaparecer al sincronizar.
 
 ## Estructura
 
