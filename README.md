@@ -279,15 +279,24 @@ patrón documentado de Supabase Realtime y no genera errores al conectarse/
 desconectarse, pero la prueba con dos teléfonos de verdad la tienen que
 hacer ustedes.
 
-### Navegación en 1 toque
+### Navegación
 
-Tocar un producto en el inicio salta directo a la recepción **abierta de
-hoy** de ese producto (o la crea al instante si no hay ninguna) — así queda
-en un solo toque, igual de rápido que la versión clásica de pestañas fijas,
-sin importar cuántos productos tenga el negocio. El botón "←" de esa
-pantalla lleva al historial completo (recepciones de otros días, o
-cerradas), que sigue existiendo pero deja de ser el paso obligatorio de
-en medio.
+Tocar un producto en el inicio lleva a su **historial** — lo abierto de hoy
+y lo de días anteriores — tanto en recepciones como en despachos. Desde ahí
+se entra a lo que ya está abierto con un toque, o se crea uno nuevo con
+**"+ Nueva recepción" / "+ Nuevo despacho"** (que es donde se pregunta por
+el cliente, en despachos).
+
+Antes tocar un producto entraba directo a pesar, creando el movimiento si
+no había ninguno abierto. Se cambió porque en el uso real sorprendía: al
+elegir un cliente para despachar, la app saltaba a un despacho nuevo sin
+dar oportunidad de ver antes lo que ya había registrado.
+
+El botón de crear sigue **reutilizando** lo que esté abierto hoy de ese
+producto (y del mismo cliente, en despachos) en vez de duplicarlo: dos
+movimientos abiertos a la vez del mismo pedido terminarían repartiendo las
+pesadas entre los dos. Para registrar algo aparte, se termina primero el
+que está abierto.
 
 ### Cómo funciona el rango de peso con menos cestas
 
