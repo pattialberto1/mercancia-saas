@@ -565,6 +565,7 @@
         <span class="lbl" style="color:var(--accent)">TOTAL BS</span>
         <span class="val" id="precio-total-bs" style="color:var(--accent)">—</span>
       </div>
+      <div id="precio-msg"></div>
     </div>
 
     <div class="card" id="entries-card">
@@ -1422,8 +1423,9 @@ function renderProductosPreview() {
 }
 
 function onTapProducto(p) {
-  if (state.homeModo === 'despacho') pedirClienteYAbrir(p);
-  else abrirCatalogoProducto(p, 'recepcion', null);
+  // tocar un producto lleva SIEMPRE al historial, nunca directo a pesar:
+  // desde ahí se ve lo de días anteriores y se decide si abrir uno nuevo
+  abrirCatalogoProducto(p, state.homeModo === 'despacho' ? 'despacho' : 'recepcion');
 }
 
 $('home-modo').addEventListener('click', e => {
@@ -1432,7 +1434,7 @@ $('home-modo').addEventListener('click', e => {
   state.homeModo = b.dataset.modo;
   for (const x of $('home-modo').querySelectorAll('button')) x.classList.toggle('on', x === b);
   $('productos-hint').textContent = state.homeModo === 'despacho'
-    ? 'Toca un producto para despachar a un cliente'
+    ? 'Toca un producto para ver o registrar sus despachos'
     : 'Toca un producto para ver o registrar sus recepciones';
 });
 
@@ -1824,7 +1826,7 @@ async function crearMovimiento(p, tipo, clientId) {
 }
 
 /* ---- pantalla: lista de recepciones o despachos de un producto (el "historial") ---- */
-async function abrirCatalogoProducto(p, tipo, clientId) {
+async function abrirCatalogoProducto(p, tipo) {
   unsubRec();
   unsubRecs();
   state.currentProduct = p;
@@ -1840,22 +1842,23 @@ async function abrirCatalogoProducto(p, tipo, clientId) {
       .subscribe();
   }
 
-  // 1 solo toque, como en la app clásica: si ya hay una recepción/despacho
-  // abierto hoy (con el mismo cliente, si aplica), entra directo a pesar
-  // ahí; si no, lo crea y entra igual. El botón "←" de esa pantalla lleva
-  // al historial completo.
+  show('recepciones');
+  await cargarRecepciones();
+}
+
+// Si ya hay algo abierto hoy de ese producto (y del mismo cliente, en
+// despachos), se entra ahí en vez de crear otro: dos movimientos abiertos a la
+// vez del mismo pedido terminan repartiendo las pesadas entre los dos. Para
+// registrar algo aparte, primero se termina el que está abierto.
+async function abrirOCrear(p, tipo, clientId) {
   let abierta = null;
   if (hayRed()) {
     let q = sb.from('receptions').select('id')
       .eq('product_id', p.id).eq('tipo', tipo).eq('fecha', todayISO()).eq('status', 'abierta');
     if (tipo === 'despacho') q = q.eq('client_id', clientId);
     const { data, error } = await q.order('created_at', { ascending: false }).limit(1);
-    if (error) {
-      console.error(error);
-      if (!esErrorDeRed(error)) { show('recepciones'); await cargarRecepciones(); return; }
-    } else if (data && data.length) {
-      abierta = data[0].id;
-    }
+    if (error && !esErrorDeRed(error)) console.error(error);
+    else if (data && data.length) abierta = data[0].id;
   }
   if (!abierta) {
     // sin señal (o sin resultado en el servidor): buscar en el historial local
@@ -1865,12 +1868,8 @@ async function abrirCatalogoProducto(p, tipo, clientId) {
     if (local) abierta = local.id;
   }
   if (abierta) { await abrirRecepcion(abierta); return; }
-
   const id = await crearMovimiento(p, tipo, clientId);
-  if (id) { await abrirRecepcion(id); return; }
-  // si algo falló, no dejar a la persona sin pantalla: mostrar el historial
-  show('recepciones');
-  await cargarRecepciones();
+  if (id) await abrirRecepcion(id);
 }
 
 async function cargarRecepciones() {
@@ -1918,9 +1917,9 @@ function renderRecepcionesList(list) {
 }
 
 $('btn-rec-new').addEventListener('click', async () => {
+  // el cliente se pregunta aquí, al crear el despacho — no al entrar al historial
   if (state.currentTipo === 'despacho') { pedirClienteYAbrir(state.currentProduct); return; }
-  const id = await crearMovimiento(state.currentProduct, 'recepcion', null);
-  if (id) await abrirRecepcion(id);
+  await abrirOCrear(state.currentProduct, 'recepcion', null);
 });
 
 $('btn-recs-back').addEventListener('click', () => { unsubRecs(); show('home'); });
@@ -1997,7 +1996,7 @@ function elegirCliente(clientId, nombre) {
   const p = state.pendingProduct;
   state.pendingProduct = null;
   if (!p) return;
-  abrirCatalogoProducto(p, 'despacho', clientId);
+  abrirOCrear(p, 'despacho', clientId);
 }
 
 /* ---- pantalla: una recepción (registrar pesadas) ---- */
@@ -2020,6 +2019,7 @@ async function abrirRecepcion(id) {
   state.cestasSel = null;
   state.tasaSugerida = null;
   state.tasaFetchFallo = false;
+  $('precio-msg').innerHTML = '';
   renderRecepcion();
   show('recepcion');
 
@@ -2280,7 +2280,23 @@ async function guardarPrecioYTasa() {
   const r = await escribir('receptions', 'update', {
     id: state.currentReceptionId, payload: { precio_kg: precio, tasa_bcv: tasa },
   });
-  if (!r.ok) { toast('No se pudo guardar'); return; }
+  if (!r.ok) {
+    const e = r.error || {};
+    console.error(e);
+    // PGRST204 = la columna no existe en la base de datos. Pasa cuando el
+    // proyecto de Supabase se creó antes de esta función y no se le corrió la
+    // actualización: no es un fallo pasajero, reintentar no lo arregla.
+    const faltaColumna = e.code === 'PGRST204' ||
+      /precio_kg|tasa_bcv/.test((e.message || '') + (e.details || ''));
+    $('precio-msg').innerHTML = faltaColumna
+      ? '<div class="msg error">Tu base de datos todavía no tiene los campos de precio. ' +
+        'El dueño tiene que correr <b>supabase/migrations/0003</b> y <b>0004</b> una sola vez ' +
+        'en Supabase → SQL Editor. Mientras tanto las pesadas se guardan igual.</div>'
+      : '<div class="msg error">No se pudo guardar el precio. Inténtalo de nuevo.</div>';
+    toast('No se pudo guardar el precio');
+    return;
+  }
+  $('precio-msg').innerHTML = '';
   state.currentReception.precio_kg = precio;
   state.currentReception.tasa_bcv = tasa;
   upsertMov({ id: state.currentReceptionId, precio_kg: precio, tasa_bcv: tasa });

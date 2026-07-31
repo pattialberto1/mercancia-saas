@@ -96,10 +96,19 @@ mensajes de usuario repetido y contraseña incorrecta.
 El inicio tiene un selector **📥 Recepciones / 📤 Despachos**. Un despacho
 usa exactamente la misma mecánica de pesadas que una recepción (cestas,
 tara, rango, botones rápidos, WhatsApp, tiempo real) — la diferencia es que
-antes de pesar pregunta **"¿Para qué cliente?"**, con un cuadro de texto que
+al crearlo pregunta **"¿Para qué cliente?"**, con un cuadro de texto que
 sugiere los clientes ya usados (se guardan solos la primera vez que se
 escribe un nombre nuevo, no hace falta crearlos a mano) y una opción de
 agregar uno nuevo si no está en la lista.
+
+**Tocar un producto lleva siempre al historial**, tanto en recepciones como
+en despachos: primero se ve lo de hoy y lo de días anteriores, y desde ahí
+se decide. El movimiento nuevo se crea con **"+ Nueva recepción"** /
+**"+ Nuevo despacho"** — que es también donde se pregunta por el cliente.
+Si ya hay algo abierto hoy de ese producto (y del mismo cliente, en
+despachos), ese botón entra ahí en vez de crear otro: dos movimientos
+abiertos a la vez del mismo pedido terminarían repartiendo las pesadas
+entre los dos. Para registrar algo aparte, se termina primero el abierto.
 
 Cada despacho sigue siendo de **un solo producto** — si despachas Pollo y
 Papas al mismo cliente el mismo día, son dos despachos separados, igual que
@@ -129,10 +138,18 @@ reutilizada tal cual). El total aparece también en el resumen de
 WhatsApp, y los reportes suman el monto facturado por producto y por
 cliente, además de los kg.
 
-No hace falta ninguna migración de esquema para el precio en sí — el
-cálculo del total (`monto`) vive en la vista `reception_summary`, para que
-nunca quede desactualizado si se corrige una pesada después. Ver
+El cálculo del total (`monto`) vive en la vista `reception_summary`, para
+que nunca quede desactualizado si se corrige una pesada después. Ver
 [`supabase/migrations/0003_precio_despacho.sql`](./supabase/migrations/0003_precio_despacho.sql).
+
+> ⚠️ **Si la app dice que no se pudo guardar el precio**, a la base le
+> faltan los dos campos (`precio_kg` y `tasa_bcv`): pasa cuando el proyecto
+> de Supabase se creó antes de que existiera esta función. Se arregla
+> pegando **[`supabase/migrations/0005_ponerse_al_dia.sql`](./supabase/migrations/0005_ponerse_al_dia.sql)**
+> completo en *Supabase → SQL Editor → Run*. Es seguro correrlo aunque ya
+> esté aplicado, y al terminar avisa *"Todo al día"*. La app detecta ese
+> caso y lo dice en pantalla en vez de un "no se pudo guardar" a secas;
+> mientras tanto las pesadas se siguen guardando con normalidad.
 
 Probado contra Postgres real (7 verificaciones): el monto se calcula bien
 y se recalcula solo con pesadas nuevas, y que solo quien creó el despacho

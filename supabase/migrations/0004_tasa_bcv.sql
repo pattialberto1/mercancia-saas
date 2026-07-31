@@ -7,7 +7,7 @@
 -- se guarda la tasa que estaba vigente cuando se cargó el precio del
 -- despacho (no se recalcula sola después) para que el histórico de
 -- reportes en bolívares no cambie con el tiempo si la tasa sube o baja.
-alter table receptions add column tasa_bcv numeric(12,4);
+alter table receptions add column if not exists tasa_bcv numeric(12,4);
 
 drop view if exists reception_summary;
 create view reception_summary

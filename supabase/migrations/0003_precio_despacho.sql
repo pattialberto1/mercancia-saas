@@ -8,7 +8,7 @@
 -- calculado se puede mostrar el total a cobrar sin guardar un monto por
 -- separado (se calcula al vuelo, así nunca queda desactualizado si se
 -- borra o corrige una pesada). No aplica a recepciones normales.
-alter table receptions add column precio_kg numeric(10,2);
+alter table receptions add column if not exists precio_kg numeric(10,2);
 
 -- el update de receptions ya lo cubre la política existente
 -- "editar mis recepciones o si soy dueno" (creado por mí o dueño), no
