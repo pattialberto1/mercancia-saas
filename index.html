@@ -1118,6 +1118,17 @@ function traducirError(err, contexto) {
       : 'Ese correo ya tiene una cuenta. Prueba «Iniciar sesión».';
   }
   if (/password.*(least|short|weak)/i.test(m)) return 'La contraseña es muy corta o muy débil (mínimo 6 caracteres).';
+  // "email rate limit exceeded": el servidor está intentando mandar un correo de
+  // confirmación. Las cuentas del equipo usan un correo interno que no existe,
+  // así que ese correo nunca llega y encima agota el cupo de envíos por hora.
+  // No es algo que se arregle reintentando: hay que apagar el ajuste.
+  if (/email rate limit|over_email_send_rate_limit/i.test(m) || /over_email_send_rate_limit/i.test((err && err.code) || '')) {
+    return 'El servidor está pidiendo confirmación por correo, y las cuentas del equipo no usan correo. ' +
+      'Hay que desactivar «Confirm email» en Supabase: Authentication → Sign In / Providers → Email. ' +
+      'Después de apagarlo funciona de una vez.';
+  }
+  if (status === 429 || /rate limit|too many requests/i.test(m))
+    return 'Demasiados intentos seguidos. Espera unos minutos y vuelve a intentarlo.';
   if (/invalid email|email.*invalid/i.test(m)) {
     return contexto === 'operador'
       ? 'Ese usuario no se pudo usar. Prueba con solo letras y números, sin espacios.'

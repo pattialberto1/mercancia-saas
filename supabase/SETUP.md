@@ -49,6 +49,15 @@ para no perder información.
    El dueño del negocio sí usa un correo real (es el único que puede recuperar su
    contraseña solo), pero eso no cambia este ajuste.
 
+   **Ojo: hay que volver a revisarlo si el proyecto se pausa y se restaura.**
+   Al despausar un proyecto este ajuste puede volver a quedar encendido. La
+   señal es inconfundible: al crear una cuenta la app dice que el servidor está
+   pidiendo confirmación por correo (por debajo Supabase devuelve
+   *"email rate limit exceeded"*, porque intenta mandar el correo de
+   confirmación a una dirección que no existe y agota el cupo de envíos por
+   hora). Se apaga *Confirm email* y funciona de inmediato: no hay que esperar
+   a que pase la hora ni borrar nada.
+
 ## 4. Copiar las llaves para la app
 
 En **Project Settings → API** vas a necesitar dos datos para la siguiente fase
