@@ -396,6 +396,11 @@ completo para usarse a diario.
 
 ### Pendiente, decidido para más adelante
 
+- **Dominio propio.** Por ahora se queda en `pattialberto1.github.io`, a la
+  espera de decidir el nombre. Los pasos están escritos abajo, en «Cambiar
+  la dirección»; cuanto antes se haga, mejor (hay que reinstalar la app en
+  cada teléfono, y lo registrado sin subir queda atado a la dirección
+  vieja).
 - **Cobros dentro de la app** (que el negocio pague su suscripción desde el
   teléfono). Hoy, cuando a un negocio se le vence la prueba de 14 días, la
   activación se hace a mano en Supabase: `update tenants set is_paid = true
