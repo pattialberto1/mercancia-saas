@@ -81,6 +81,9 @@
   }
   .btn-link { color: var(--accent); font-size: 14px; font-weight: 600; padding: 6px; }
   .btn-link.danger { color: var(--bad); }
+  .instalar-card { border-color: var(--accent); }
+  .instalar-card .pasos { margin: 0 0 0 20px; padding: 0; font-size: 14px; color: var(--muted); }
+  .instalar-card .pasos li { margin-bottom: 6px; }
   .equipo-row {
     display: flex; align-items: center; gap: 10px;
     padding: 12px 2px; border-bottom: 1px solid var(--line);
@@ -437,6 +440,8 @@
 
       <button type="submit" class="btn-primary" id="btn-auth-submit">Iniciar sesión</button>
     </form>
+
+    <div class="card hidden instalar-card" id="instalar-auth"></div>
   </section>
 
   <!-- ================= HOME AUTENTICADO ================= -->
@@ -484,6 +489,8 @@
       <p class="sub" style="margin-bottom:10px" id="productos-hint">Toca un producto para ver o registrar sus recepciones</p>
       <div id="productos-preview"></div>
     </div>
+
+    <div class="card hidden instalar-card" id="instalar-home"></div>
   </section>
 
   <!-- ================= AJUSTES DE PRODUCTOS ================= -->
@@ -1475,6 +1482,89 @@ function quitarDelEquipo(userId, nombre) {
       await cargarEquipo();   // refresca la lista y limpia el mensaje anterior…
       msgEquipo(nombre + ' ya no forma parte de tu equipo.', 'ok');   // …y luego confirma
     });
+}
+
+/* ============ instalar la app en el teléfono ============
+   Android y iPhone no se instalan igual y no hay forma de unificarlo:
+   - Android (Chrome) avisa con "beforeinstallprompt" y deja abrir el
+     diálogo de instalación desde un botón nuestro.
+   - iPhone (Safari) no tiene esa API: la persona TIENE que usar Compartir →
+     "Añadir a pantalla de inicio". Lo único que se puede hacer es explicarlo
+     bien, con el icono que va a ver en pantalla.
+   - Chrome/Firefox en iPhone no pueden instalar nada (todos usan el motor de
+     Safari, pero solo Safari expone esa opción), así que ahí se avisa. */
+const INSTALAR_KEY = 'mercancia_instalar_oculto';
+let promptInstalar = null;
+
+function yaInstalada() {
+  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+function esIOS() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+    // iPad moderno se hace pasar por Mac; se delata por el táctil
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+function esSafari() {
+  const ua = navigator.userAgent;
+  return /safari/i.test(ua) && !/crios|fxios|edgios|chrome|android/i.test(ua);
+}
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();          // el aviso lo damos nosotros, donde se entiende
+  promptInstalar = e;
+  renderInstalar();
+});
+window.addEventListener('appinstalled', () => {
+  promptInstalar = null;
+  renderInstalar();
+  toast('App instalada 🎉');
+});
+
+function renderInstalar() {
+  const oculto = lsGet(INSTALAR_KEY, false);
+  const cards = [$('instalar-auth'), $('instalar-home')];
+  // instalada, o la persona dijo "ahora no": no se insiste
+  if (yaInstalada() || oculto) {
+    for (const c of cards) c.classList.add('hidden');
+    return;
+  }
+  let html = '';
+  if (promptInstalar) {
+    html = `<h2>📲 Instala la app</h2>
+      <p class="sub" style="margin:6px 0 12px">Se agrega a tu pantalla de inicio y abre como una app normal, a pantalla completa y sin la barra del navegador.</p>
+      <button class="btn-primary btn-instalar">Instalar</button>`;
+  } else if (esIOS() && esSafari()) {
+    html = `<h2>📲 Instala la app</h2>
+      <p class="sub" style="margin:6px 0 10px">En el iPhone se agrega en dos toques:</p>
+      <ol class="pasos">
+        <li>Toca <strong>Compartir</strong> abajo (el cuadrito con la flecha hacia arriba ⬆️).</li>
+        <li>Baja y elige <strong>«Añadir a pantalla de inicio»</strong>.</li>
+      </ol>
+      <p class="sub" style="margin-top:10px">Queda el icono 🐔 junto a tus otras apps y abre a pantalla completa.</p>`;
+  } else if (esIOS()) {
+    html = `<h2>📲 Para instalarla, abre esta página en Safari</h2>
+      <p class="sub" style="margin:6px 0 0">En el iPhone solo Safari puede agregar apps a la pantalla de inicio. Copia la dirección, ábrela en Safari y ahí te explico los dos pasos.</p>`;
+  } else {
+    // Android antes de que el navegador dé el aviso, o un computador
+    html = `<h2>📲 Instala la app</h2>
+      <p class="sub" style="margin:6px 0 0">Abre el menú del navegador (⋮) y elige <strong>«Instalar aplicación»</strong> o <strong>«Agregar a pantalla de inicio»</strong>.</p>`;
+  }
+  html += '<button class="btn-link btn-instalar-no" style="margin-top:10px">Ahora no</button>';
+  for (const c of cards) { c.innerHTML = html; c.classList.remove('hidden'); }
+
+  for (const c of cards) {
+    const b = c.querySelector('.btn-instalar');
+    if (b) b.onclick = async () => {
+      if (!promptInstalar) return;
+      promptInstalar.prompt();
+      const { outcome } = await promptInstalar.userChoice;
+      promptInstalar = null;
+      if (outcome !== 'accepted') toast('Puedes instalarla más tarde desde aquí');
+      renderInstalar();
+    };
+    const no = c.querySelector('.btn-instalar-no');
+    if (no) no.onclick = () => { lsSet(INSTALAR_KEY, true); renderInstalar(); };
+  }
 }
 
 let cerrandoSesion = false;
@@ -2907,6 +2997,7 @@ $('disc-save').addEventListener('click', async () => {
 /* ============ arranque ============ */
 renderAuthForm();
 renderEstadoRed();
+renderInstalar();
 
 // Sin señal, Supabase puede tardar (o no llegar) a avisar que hay sesión.
 // Si el teléfono ya tiene los datos del negocio guardados, se entra de una

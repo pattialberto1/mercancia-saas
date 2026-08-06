@@ -412,6 +412,68 @@ completo para usarse a diario.
   recepciones el único que lo sabe es el servidor, y encolarlo dejaría al
   dueño creyendo que lo borró para verlo reaparecer al sincronizar.
 
+## Instalarla en el teléfono
+
+La app es una **PWA**: se instala desde el navegador, sin tiendas, sin
+revisiones de Apple ni de Google, y sin que nadie cobre comisión. Se agrega
+a la pantalla de inicio y abre a pantalla completa como cualquier otra app.
+
+Los dos sistemas no se instalan igual, y no hay forma de unificarlo, así
+que la app detecta dónde está y dice lo que toca:
+
+| | Cómo se instala |
+|---|---|
+| **Android** (Chrome) | La app muestra un botón **Instalar** que abre el diálogo del propio navegador. Un toque. |
+| **iPhone** (Safari) | No existe ese botón en iOS: hay que usar **Compartir ⬆️ → «Añadir a pantalla de inicio»**. La app lo explica con esos dos pasos. |
+| **iPhone** (Chrome, Firefox…) | No pueden instalar nada — en iOS solo Safari expone esa opción. La app avisa de que hay que abrirla en Safari. |
+
+El aviso sale en la pantalla de acceso (que es donde llega alguien nuevo) y
+dentro de la app, tiene un **«Ahora no»** que se respeta, y desaparece solo
+en cuanto la app está instalada.
+
+Para que Android acepte instalarla hacen falta cuatro cosas, y las cuatro
+están: servirse por **HTTPS**, un **manifiesto** con nombre e iconos de 192
+y 512 px, `display: standalone`, y un **service worker** que responda a las
+peticiones. Hay además un icono **maskable** (con margen), porque Android
+recorta el icono en círculo y sin ese margen se comía el pico del gallo.
+
+## Cambiar la dirección (quitar el `github.io`)
+
+La app no depende de GitHub para nada: son archivos estáticos y **todas las
+rutas del manifiesto son relativas**, así que funciona igual en cualquier
+dominio sin tocar una línea de código.
+
+Para usar un dominio propio con GitHub Pages (sigue siendo gratis; solo se
+paga el dominio, ~10–15 $ al año):
+
+1. Comprar el dominio (Namecheap, Porkbun, Cloudflare…).
+2. En el DNS del dominio, crear un registro **CNAME** del subdominio que
+   quieras (por ejemplo `app`) apuntando a **`pattialberto1.github.io`**.
+   Si quieres usar el dominio pelado (`midominio.com`), en vez del CNAME
+   van cuatro registros **A** a las IPs de GitHub Pages: `185.199.108.153`,
+   `185.199.109.153`, `185.199.110.153`, `185.199.111.153`.
+3. En el repositorio: **Settings → Pages → Custom domain**, escribir el
+   dominio y **Save**. Eso crea un archivo `CNAME` en la raíz del repo.
+4. Esperar a que aparezca el check verde y marcar **Enforce HTTPS**. El
+   certificado lo emite GitHub solo, gratis; puede tardar unos minutos.
+
+Como son dos apps en dos repositorios, van en dos subdominios distintos
+(por ejemplo `app.midominio.com` para el SaaS y `pollo.midominio.com` para
+la versión clásica). Cada repositorio lleva su propio dominio.
+
+> ⚠️ **Hazlo antes de que la gente empiece a usarla, no después.** El
+> navegador guarda los datos **por dirección**: la sesión, el historial
+> descargado y sobre todo **la cola de lo registrado sin señal** viven
+> atados a `pattialberto1.github.io`. Al cambiar de dominio, un teléfono
+> que tuviera pesadas sin subir las perdería, y la app instalada en la
+> pantalla de inicio seguiría apuntando a la dirección vieja (hay que
+> borrarla y volver a instalarla). Con la app recién estrenada esto no
+> cuesta nada; con tres meses de uso, sí.
+>
+> Después del cambio hay que actualizar el **Site URL** en Supabase
+> (*Authentication → URL Configuration*), que es el que usan los enlaces de
+> recuperación de contraseña del dueño.
+
 ## Estructura
 
 - `index.html` — toda la app: login, registro, marco autenticado, Ajustes
